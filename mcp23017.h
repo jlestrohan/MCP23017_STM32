@@ -1,14 +1,20 @@
-/*
+/**
+ * --------------------------------------------------------------------------
  * mcp23017.h
  *
- *  Created on: 18 apr. 2018
- *      Author: Jack Lestrohan
+ *  Created on: Aug 16, 2020
+ *      Author: Jack Lestrohan (c) Cobalt Audio - 2020
+ * --------------------------------------------------------------------------
  */
-
 #ifndef MCP23017_H_
 #define MCP23017_H_
 
 #include "stm32g4xx_hal.h"
+#include <stdint.h>
+#include "cmsis_os2.h"
+
+/* comment out if not */
+#define MCP23017_USE_FREERTOS
 
 // Addresses (A0-A2)
 #define MCP23017_ADD_20			0x20
@@ -39,31 +45,37 @@
 #define MCP23017_GPB6_Pin		0x0E
 #define MCP23017_GPB7_Pin		0x0F
 
+typedef enum {
+	MCP23017Port_A,
+	MCP23017Port_B
+} MCP23017Port_t;
+
 typedef enum{
 	MCP23017_PIN_MODE_INPUT,
+	MCP23017_PIN_MODE_INPUT_PULLUP,
 	MCP23017_PIN_MODE_OUTPUT
-} MCP23017_PinModeIO;
-
-typedef enum{
-	MCP23017_PIN_STATE_LOW,
-	MCP23017_PIN_STATE_HIGH
-} MCP23017_PinModeState;
+} MCP23017_PinModeIO_t;
 
 typedef enum {
-	MCP23017_IRQ_MODE_LOW, 			/* to trigger the interrupt whenever the pin is low */
+	MCP23017_PIN_POLARITY_NORMAL,
+	MCP23017_PIN_POLARITY_INVERTED
+} MCP23017_PinPolarity_t;
+
+typedef enum {
+	MCP23017_INTERRUPT_MODE_SEPARATED,
+	MCP23017_INTERRUPT_MODE_OR,
+} MCP23017_InterruptMode_t;
+
+typedef enum {
 	MCP23017_IRQ_MODE_CHANGE, 		/* to trigger the interrupt whenever the pin changes value */
 	MCP23017_IRQ_MODE_RISING,		/* to trigger when the pin goes from low to high */
 	MCP23017_IRQ_MODE_FALLING,		/* for when the pin goes from high to low. */
-	MCP23017_IRQ_MODE_HIGH 			/* to trigger the interrupt whenever the pin is high. */
-} MCP23017_InterruptModeState;
+} MCP23017_InterruptModeState_t;
 
 typedef struct {
 	I2C_HandleTypeDef*	hi2c;
 	uint16_t			addr;
-	//uint8_t			gpio[2];
 } MCP23017_HandleTypeDef;
-
-
 
 //Functions prototypes for hardware abstraction
 /**
@@ -73,87 +85,12 @@ typedef struct {
  * @param addr
  */
 HAL_StatusTypeDef mcp23017_init(MCP23017_HandleTypeDef *hdev, I2C_HandleTypeDef *hi2c, uint16_t addr);
-
-/**
- * Sets the pin mode to either INPUT or OUTPUT
- * @param hdev
- * @param p
- * @param pinMode MCP23017_PinModeIO
- */
-HAL_StatusTypeDef mcp23017_pinMode(MCP23017_HandleTypeDef *hdev, uint8_t p, MCP23017_PinModeIO pinMode);
-
-/**
- * Enable a pullUp resistor for a given pin
- * @param hdev
- * @param p
- * @param d
- */
-HAL_StatusTypeDef mcp23017_pullUp(MCP23017_HandleTypeDef *hdev, uint8_t p, MCP23017_PinModeState pinPullUpState);
-
-/**
- * Reads a given pin
- * @param hdev
- * @param pin
- * @return
- */
+HAL_StatusTypeDef mcp23017_pinMode(MCP23017_HandleTypeDef *hdev, uint8_t pin, MCP23017_PinModeIO_t mode, MCP23017_PinPolarity_t polarity);
+HAL_StatusTypeDef mcp23017_portMode(MCP23017_HandleTypeDef *hdev, MCP23017Port_t port, MCP23017_PinModeIO_t pinmode, uint8_t inverted);
 HAL_StatusTypeDef mcp23017_digitalRead(MCP23017_HandleTypeDef *hdev, uint8_t pin, uint8_t *data);
-
-/**
- * Writes to a pin on the MCP23017
- * @param hdev
- * @param pin
- * @param d
- */
-HAL_StatusTypeDef mcp23017_digitalWrite(MCP23017_HandleTypeDef *hdev, uint8_t pin, uint8_t d);
-
-/**
- * Sets pinmode (input/output) for all pins once for all
- * @param dev	MCP23017_HandleTypeDef struct
- * @param mode	pinModeState HIGH/LOW
- */
-void mcp23017_pinModeAllPins(MCP23017_HandleTypeDef *hdev, MCP23017_PinModeIO pinmode);
-
-
-/**
- * Sets pull-up state (high/low) for all pins once for all
- * @param hdev
- * @param puState
- */
-void mcp23017_pullUpAllPins(MCP23017_HandleTypeDef *hdev, MCP23017_PinModeState puState);
-
-
-/**
- * Set's up a pin for interrupt. uses arduino MODEs: CHANGE, FALLING, RISING.
- *
- * Note that the interrupt condition finishes when you read the information
- * about the port / value that caused the interrupt or you read the port itself.
- * Check the datasheet can be confusing.
- * @param hdev
- * @param pin Pin to set
- * @param mode Mode to set the pin to
- */
-HAL_StatusTypeDef mcp23017_setupInterruptPin(MCP23017_HandleTypeDef *hdev, uint8_t pin, uint8_t mode);
-
-/**
- * Configures the interrupt system. both port A and B are assigned the same
- * configuration.
- * @param mirroring Mirroring will OR both INTA and INTB pins.
- * @param openDrain Opendrain will set the INT pin to value or open drain.
- * @param polarity polarity will set LOW or HIGH on interrupt.
- * @return HAL_StatusTypeDef error handling
- *
- * Default values after Power On Reset are: (false, false, LOW)
- * If you are connecting the INTA/B pin to arduino 2/3, you should configure the
- * interupt handling as FALLING with the default configuration.
- */
-HAL_StatusTypeDef mcp23017_setupInterrupts(MCP23017_HandleTypeDef *hdev, uint8_t mirroring, uint8_t openDrain, uint8_t polarity);
-
-/**
- * Gets the last interrupt pin
- * @param hdev
- * @param data pointer to the target variable that will contain the result
- * @return HAL_StatusTypeDef I2C mcp23017 instance struct
- */
+HAL_StatusTypeDef mcp23017_digitalWrite(MCP23017_HandleTypeDef *hdev, uint8_t pin, GPIO_PinState pinState);
+HAL_StatusTypeDef mcp23017_setInterruptMode(MCP23017_HandleTypeDef *hdev, MCP23017_InterruptMode_t mode);
+HAL_StatusTypeDef mcp23017_setupInterruptPin(MCP23017_HandleTypeDef *hdev, uint8_t pin, MCP23017_InterruptModeState_t mode);
 HAL_StatusTypeDef mcp23017_getLastInterruptPin(MCP23017_HandleTypeDef *hdev, uint8_t *data);
-
+HAL_StatusTypeDef mcp23017_getLastInterruptPinValue(MCP23017_HandleTypeDef *hdev, uint16_t *data);
 #endif /* MCP23017_H_ */
