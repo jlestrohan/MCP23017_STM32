@@ -178,13 +178,14 @@ HAL_StatusTypeDef mcp23017_portMode(MCP23017_HandleTypeDef *hdev, MCP23017Port_t
 {
 	HAL_StatusTypeDef ret;
 
-	ret = mcp23017_writeRegister(hdev, MCP23017_IODIRA + port, pinmode);
+	ret = mcp23017_writeRegister(hdev, MCP23017_IODIRA + port,
+			(pinmode == MCP23017_PIN_MODE_INPUT || pinmode == MCP23017_PIN_MODE_INPUT_PULLUP) ? 0xFF : 0x00);
 	if (ret != HAL_OK) return ret;
 
-	ret = mcp23017_writeRegister(hdev, MCP23017_GPPUA + port, (pinmode == MCP23017_PIN_MODE_INPUT_PULLUP));
+	ret = mcp23017_writeRegister(hdev, MCP23017_GPPUA + port, (pinmode == MCP23017_PIN_MODE_INPUT_PULLUP ? 0xff : 0x00));
 	if (ret != HAL_OK) return ret;
 
-	ret = mcp23017_writeRegister(hdev, MCP23017_IPOLA + port, pinpolarity);
+	ret = mcp23017_writeRegister(hdev, MCP23017_IPOLA + port, pinpolarity ? 0xff : 0x00);
 	if (ret != HAL_OK) return ret;
 
 	return HAL_OK;
