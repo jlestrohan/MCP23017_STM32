@@ -10,9 +10,8 @@
 #include "cmsis_os2.h"
 #include "stm32g4xx_hal.h"
 
-#ifdef MCP23017_USE_FREERTOS
-osMutexId_t mutex_mcp23017;
-#endif
+/* max delay given to all I2C stuff to initialize itself */
+#define I2C_READYNESS_DELAY		500
 
 #define lowByte(w) ((uint8_t) ((w) & 0xff))
 #define highByte(w) ((uint8_t) ((w) >> 8))
@@ -136,10 +135,8 @@ HAL_StatusTypeDef mcp23017_init(MCP23017_HandleTypeDef *hdev, I2C_HandleTypeDef 
 	hdev->hi2c = hi2c;
 	hdev->addr = addr << 1;
 
-#ifdef MCP23017_USE_FREERTOS
-	/* create mutex */
-	mutex_mcp23017 = osMutexNew(NULL);
-#endif
+	ret = HAL_I2C_IsDeviceReady(hi2c, hdev->addr, 20, I2C_READYNESS_DELAY);
+	if (ret != HAL_OK) return ret;
 
 	//BANK = 	0 : sequential register addresses
 	//MIRROR = 	0 : use configureInterrupt
@@ -149,18 +146,12 @@ HAL_StatusTypeDef mcp23017_init(MCP23017_HandleTypeDef *hdev, I2C_HandleTypeDef 
 	//ODR = 	0 : open drain output
 	//INTPOL = 	0 : interrupt active low
 	// bit0 - unplemented read as 0
-	uint8_t byte = 0;
-	bitSet(byte, 5);
-	bitSet(byte, 6);
+	uint8_t byte = 0 | 1 << 5 | 1 << 6;
 
-	ret = mcp23017_writeRegister(hdev, MCP23017_IOCONA, byte);
-	if (ret != HAL_OK) return ret;
-
-	//enable all pull up resistors (will be effective for input pins only)
-	ret = mcp23017_writeRegister(hdev, MCP23017_GPPUA,0x00);
-	if (ret != HAL_OK) return ret;
-	ret = mcp23017_writeRegister(hdev, MCP23017_GPPUB,0x00);
-	if (ret == HAL_OK) return ret;
+	for (uint8_t i = 0; i < 2; i++) {
+		ret = mcp23017_writeRegister(hdev, MCP23017_IOCONA+i, byte);
+		if (ret != HAL_OK) return ret;
+	}
 
 	return HAL_OK;
 }
@@ -273,8 +264,8 @@ HAL_StatusTypeDef mcp23017_setInterruptMode(MCP23017_HandleTypeDef *hdev, MCP230
 	for (uint8_t i = 0; i < 2; i++) {
 		/* first we read what's in both IOCON regs, we set or unset the bit and we write it back */
 		mcp23017_readRegister(hdev, MCP23017_IOCONA + i, &data);
-		if (mode) bitSet(data, 6);
-		else bitClear(data, 6);
+		if (mode) data |= 1 << 6;
+		else data &= ~(1 << 6);
 		mcp23017_writeRegister(hdev, MCP23017_IOCONA+i, data);
 	}
 	return HAL_OK;
